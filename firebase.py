@@ -1,4 +1,8 @@
 
+def record_schuedules_for_squadron(squadron_id, new_schedules):
+    #TODO implement this
+    pass
+
 
 def get_squadron_dates_missing_schedules():
     return [#TODO get this from firebase instead of returning hard-coded values
