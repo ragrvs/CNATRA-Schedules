@@ -5,7 +5,8 @@ def record_schuedules_for_squadron(squadron_id, new_schedules):
 
 
 def get_squadron_dates_missing_schedules():
-    return [#TODO get this from firebase instead of returning hard-coded values
+    #TODO get this from firebase instead of returning hard-coded values
+    return [
         {
             'squadron_id': 'vt-9',
             'dates': [

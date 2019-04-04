@@ -25,9 +25,9 @@ def _get_state_values_from_html(html_string):
     }
 
 def _get_page_html(url, data=None):
-    response = requests.post(url, data=data)#TODO use a connection pool (single threading it like this is monumentally inefficient)
+    response = requests.post(url, data=data) # TODO use a connection pool (single threading it like this is monumentally inefficient)
     content = response.content
-    decoded = content.decode('utf-8')#TODO this is an assumption. we should probably get the charset header and use that
+    decoded = content.decode('utf-8') #TODO this is an assumption. we should probably get the charset header and use that
     return decoded
 
 def _get_base_state_values_for_squadron(squadron_url):
@@ -73,7 +73,7 @@ def get_squadron_schedule_data_for_dates(squadron_id, dates):
         if schedule_data:
             schedules[date_string] = schedule_data
 
-    return schedules
+    return schedules #TODO if there are no new schedules, return None
 
 #########################################
 # WORKING CODE FROM BEFORE THE REFACTOR #
