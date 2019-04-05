@@ -1,17 +1,22 @@
 import requests
 from lxml import html
+from datetime  import datetime
 
 BASE_URL = 'https://www.cnatra.navy.mil/scheds/schedule_data.aspx?sq='
 
 #TODO if we object-orient this, can we multi-thread the whole thing
 
+DATE_FORMAT = '%Y-%m-%d'
+ZERO_DATE = datetime.strptime('2000-01-01', DATE_FORMAT)
+
 def _date_string_to_date_number(date_string):
-    #TODO implement
-    return "7030"
+    date = datetime.strptime(date_string, DATE_FORMAT)
+    return str((date - ZERO_DATE).days)
 
 def _get_front_page_url(squadron_id, date_string):
-    #TODO implement
-    return 'https://www.cnatra.navy.mil/scheds/tw1/SQ-VT-7/!2019-04-03!VT-7!Frontpage.pdf'
+    sid = squadron_id.upper()
+    ds = date_string.upper()
+    return 'https://www.cnatra.navy.mil/scheds/tw1/SQ-{}/!{}!{}!Frontpage.pdf'.format(sid, ds, sid)
 
 def _get_state_values_from_html(html_string):
     html_tree = html.fromstring(html_string)
