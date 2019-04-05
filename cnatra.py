@@ -21,7 +21,10 @@ The algorithm for scraping schedule date for all requested days is this:
 import requests
 from lxml import html
 from datetime  import datetime
+import re
 
+FONT_RE = re.compile(r'</?font.*?>')
+BR_RE = re.compile(r'<br>')
 BASE_URL = 'https://www.cnatra.navy.mil/scheds/schedule_data.aspx?sq='
 
 DATE_FORMAT = '%Y-%m-%d'
@@ -50,12 +53,11 @@ def _get_front_page_url(squadron_id: str, date_string: str) -> str:
     Returns:
         The URL to the 'front page' PDF for the squadron and day.
     """
-    _date_string_to_date_number()
     sid = squadron_id.upper()
     ds = date_string.upper()
     return 'https://www.cnatra.navy.mil/scheds/tw1/SQ-{}/!{}!{}!Frontpage.pdf'.format(sid, ds, sid)
 
-def _get_state_values_from_html(html_string: str) -> dict[str, str]:
+def _get_state_values_from_html(html_string: str) -> dict:
     """
     Gets the state values from an HTML string.
 
@@ -74,7 +76,7 @@ def _get_state_values_from_html(html_string: str) -> dict[str, str]:
         '__EVENTVALIDATION': event_validation
     }
 
-def _get_page_html(url: str, data: dict[str, str]=None) -> str:
+def _get_page_html(url: str, data: dict=None, headers: dict=None) -> str:
     """
     Get the html for a given URL and data params.
 
@@ -84,12 +86,12 @@ def _get_page_html(url: str, data: dict[str, str]=None) -> str:
     Returns:
         The HTML returned from the request.
     """
-    response = requests.post(url, data=data) # TODO use a connection pool (single threading it like this is monumentally inefficient)
+    response = requests.post(url, data=data, headers=headers) # TODO use a connection pool (single threading it like this is monumentally inefficient)
     content = response.content
     decoded = content.decode('utf-8') #TODO this is an assumption. we should probably get the charset header and use that
     return decoded
 
-def _get_base_state_values_for_squadron(squadron_url: str) -> dict[str, str]:
+def _get_base_state_values_for_squadron(squadron_url: str) -> dict:
     """
     Gets the state values from squadron's schedule page in its base state, i.e. the state that results from a request to the page that did not include any form data.
     We are simulating typing the URL into the browser and hitting enter.
@@ -103,7 +105,7 @@ def _get_base_state_values_for_squadron(squadron_url: str) -> dict[str, str]:
     state = _get_state_values_from_html(html_string)
     return state
 
-def _get_state_for_date(squadron_url: str, date_number: str, base_state: dict[str, str]) -> dict[str, str]:
+def _get_state_for_date(squadron_url: str, date_number: str, base_state: dict) -> dict:
     """
     Gets the state values for a page where the calendar widget is set to the given date.
     We simulate navigating there from the squadron's base schedule page by passing in the state values that came from the base schedule page.
@@ -134,11 +136,12 @@ def _get_schedule_html_for_date(squadron_url: str, date_state: str) -> str:
         The HTML code for the squadron's schedule page for the given date.
     """
     state = date_state.copy()# don't mutate the original
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     state['btnViewSched'] = 'View Schedule'
-    html_string = _get_page_html(squadron_url, date_state)
+    html_string = _get_page_html(squadron_url, state, headers=headers)
     return html_string
 
-def _parse_schedule_data(html_string: str) -> dict[str, str]:
+def _parse_schedule_data(html_string: str) -> dict:
     """
     Gets the schedule data from a schedule page.
 
@@ -147,15 +150,22 @@ def _parse_schedule_data(html_string: str) -> dict[str, str]:
     Returns:
         A dictionary with two keys. 'notes' is the test from a page's 'SQUADRON NOTES' section. 'events' is a list of events scheduled for the day.
     """
-    #TODO implement this
-    return {
-        'notes': 'foo',
-        'events': [
+    tree = html.fromstring(html_string)
+    error_message_elements = tree.cssselect('p.messageL')
+    if len(error_message_elements): # no schedule data on this page
+        return None
+    schedule_data = {}
+    notes_table_elements = tree.cssselect('table#dgCoversheet')
+    if len(notes_table_elements): # because it's possible it there's no "squadron notes" on a page
+        innermost_notes_element = notes_table_elements[0].cssselect('td font')[0]
+        notes = html.tostring(innermost_notes_element).decode('utf-8')
+        notes_without_font_tags = FONT_RE.sub('', notes)
+        notes_with_newlines = BR_RE.sub('\n', notes_without_font_tags)
+        schedule_data['notes'] = notes_with_newlines
+    # TODO parse data from events table
+    return schedule_data
 
-        ]
-    }
-
-def get_squadron_schedule_data_for_dates(squadron_id: str, dates: list[str]) -> dict[str, dict]:
+def get_squadron_schedule_data_for_dates(squadron_id: str, dates: list) -> dict:
     """
     Gets the schedule data for a squadron for a list of specified dates.
 
@@ -174,43 +184,8 @@ def get_squadron_schedule_data_for_dates(squadron_id: str, dates: list[str]) -> 
         date_state = _get_state_for_date(squadron_url, date_number, base_state)
         schedule_html = _get_schedule_html_for_date(squadron_url, date_state)
         schedule_data = _parse_schedule_data(schedule_html)
-        schedule_data['frontPageUrl'] = _get_front_page_url(squadron_id, date_string)
         if schedule_data:
+            schedule_data['frontPageUrl'] = _get_front_page_url(squadron_id, date_string)
             schedules[date_string] = schedule_data
 
     return schedules #TODO if there are no new schedules, return None
-
-#########################################
-# WORKING CODE FROM BEFORE THE REFACTOR #
-#########################################
-# PAGE_URL = 'https://www.cnatra.navy.mil/scheds/schedule_data.aspx?sq=vt-9'
-#
-# def get_data_from_page(url, data = None, headers = None):
-#     response = requests.post(url, data=data, headers=headers)
-#     return response.text
-#
-# def get_state_from_html_tree(html_tree):
-#     view_state = html_tree.cssselect('#__VIEWSTATE')[0].get('value')
-#     view_state_generator = html_tree.cssselect('#__VIEWSTATEGENERATOR')[0].get('value')
-#     event_validation = html_tree.cssselect('#__EVENTVALIDATION')[0].get('value')
-#     return {
-#         '__VIEWSTATE': view_state,
-#         '__VIEWSTATEGENERATOR': view_state_generator,
-#         '__EVENTVALIDATION': event_validation
-#     }
-#
-# # get base state values from main page
-# initial_page_html = get_data_from_page(PAGE_URL)
-# initial_state = get_state_from_html_tree(html.fromstring(initial_page_html))
-#
-# # switch to Monday, April 1, 2019
-# initial_state_with_calendar_change = initial_state.copy()
-# initial_state_with_calendar_change['__EVENTTARGET'] = 'ctrlCalendar'
-# initial_state_with_calendar_change['__EVENTARGUMENT'] = '7030'
-# specific_day_page_html = get_data_from_page(PAGE_URL, data=initial_state_with_calendar_change)
-# specific_day_state = get_state_from_html_tree(html.fromstring(specific_day_page_html))
-#
-# # get data for the day
-# day_state_with_schedule_request = specific_day_state.copy()
-# day_state_with_schedule_request['btnViewSched'] = 'View Schedule'
-# day_with_schedule_html = get_data_from_page(PAGE_URL, day_state_with_schedule_request)
